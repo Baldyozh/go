@@ -1,0 +1,9 @@
+kafka:
+  path:
+    - "localhost:9092"
+  topic: "logs"
+  group_id: "1"
+crypto:
+  fields_to_encrypt:
+    - "passport"
+    - "snils"

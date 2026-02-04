@@ -1,0 +1,18 @@
+{
+  "request_id": "1",
+  "timestamp": "2024-03-15T14::30:00Z",
+  "partner_id": "bank_api_v1",
+  "http_method": "POST",
+  "endpoint": "/api/v1/verify",
+  "request_body": {
+    "user_id": 12345,
+    "passport": "4510 123456 ",
+    "snils": " 123-456 -789 00"
+},
+  "response_body":{
+    "status": "success",
+    "verification_id": "ver_789"
+  },
+  "http_status": 200,
+  "processing_time_ms": 142
+}
