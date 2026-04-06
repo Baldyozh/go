@@ -7,3 +7,4 @@ crypto:
   fields_to_encrypt:
     - "passport"
     - "snils"
+

@@ -1,28 +1,5 @@
 package test
 
-import (
-	"encoding/json"
-	"log-processor/config"
-)
-
-func FindAndModifyJson(rawJson chan []byte, cryptedJson chan []byte, config config.CryptoConfig) {
-	jsonData := <-rawJson
-	jsonMap := make(map[string]any)
-	err := json.Unmarshal([]byte(jsonData), &jsonMap)
-	if err != nil {
-		panic(err)
-	}
-	for _, fieldToEncrypt := range config.FieldsToEncrypt {
-		jsonMap[fieldToEncrypt] = "UpdatedField"
-	}
-	jsonData, err = json.Marshal(&jsonMap)
-	if err != nil {
-		panic(err)
-	}
-	cryptedJson <- jsonData
-
-}
-
 /*
 
 msg1 := []byte(`{

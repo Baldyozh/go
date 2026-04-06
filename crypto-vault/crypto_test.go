@@ -1,7 +1,6 @@
-package crypto
+package crypto_vault
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -9,14 +8,38 @@ import (
 )
 
 func decodeOrFail(t *testing.T, s string) string {
-	b, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		t.Fatalf("failed to base64-decode %q: %v", s, err)
+	// Initialize a test cipher for decryption
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
 	}
-	return string(b)
+
+	cipher, err := NewAESGCM(testKey)
+	if err != nil {
+		t.Fatalf("failed to create test cipher: %v", err)
+	}
+
+	decrypted, err := cipher.DecryptString(s)
+	if err != nil {
+		t.Fatalf("failed to decrypt %q: %v", s, err)
+	}
+	return decrypted
+}
+
+func setupTestCipher(t *testing.T) {
+	testKey := make([]byte, 32)
+	for i := range testKey {
+		testKey[i] = byte(i)
+	}
+
+	err := InitGlobalCipher(testKey)
+	if err != nil {
+		t.Fatalf("failed to initialize global cipher: %v", err)
+	}
 }
 
 func TestEncryptJSONFields_GlobalNameAnywhere(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{
 		"email":"root@example.com",
 		"user": {"email":"alice@example.com", "profile": {"contact":{"email":"deep@example.com"}}},
@@ -72,6 +95,7 @@ func TestEncryptJSONFields_GlobalNameAnywhere(t *testing.T) {
 }
 
 func TestEncryptJSONFields_PositionalPathOnly(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{
 		"companies": [
 			{"name":"Co1", "email":"co1@example.com"},
@@ -114,6 +138,7 @@ func TestEncryptJSONFields_PositionalPathOnly(t *testing.T) {
 }
 
 func TestEncryptJSONFields_MixedGlobalAndPositional(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{
 		"users": [{"email":"u1@example.com", "secret":"s1"}, {"email":"u2@example.com", "secret":"s2"}],
 		"admins": [{"email":"a1@example.com", "secret":"as1"}],
@@ -161,6 +186,7 @@ func TestEncryptJSONFields_MixedGlobalAndPositional(t *testing.T) {
 }
 
 func TestEncryptJSONFields_WildcardArrayAndIndex(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{
 		"items":[{"secret":"s1","id":1},{"secret":"s2","id":2}],
 		"payments":[{"card_number":"1111"},{"card_number":"2222"}]
@@ -198,6 +224,7 @@ func TestEncryptJSONFields_WildcardArrayAndIndex(t *testing.T) {
 }
 
 func TestEncryptJSONFields_MissingPositionalPathReturnsError(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{"a":{}}`)
 	paths := []string{"a.b.c"} // b отсутствует
 
@@ -208,6 +235,7 @@ func TestEncryptJSONFields_MissingPositionalPathReturnsError(t *testing.T) {
 }
 
 func TestEncryptJSONFields_NonStringTargetReturnsError(t *testing.T) {
+	setupTestCipher(t)
 	input := []byte(`{"user":{"age":30, "email":"e@example.com"}}`)
 	paths := []string{"user.age", "email"} // user.age не строка, email глобально
 

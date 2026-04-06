@@ -1,0 +1,72 @@
+# Vault Configuration for Kafka Encryption
+vault:
+  # Vault server address
+  address: "http://localhost:8200"
+
+  token: "${VAULT_TOKEN}"
+  
+  # Transit secrets engine path
+  transit_path: "transit"
+  
+  # Encryption key name
+  key_name: "kafka-encryption"
+  
+  # Caching configuration
+  cache:
+    enabled: true
+    ttl: "1h"
+  
+  # Key rotation settings
+  rotation:
+    enabled: true
+    interval: "24h"
+    auto_rotate: true
+
+# Alternative authentication methods (uncomment to use)
+# auth_methods:
+#   kubernetes:
+#     role: "kafka-processor"
+#     jwt_path: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+#   approle:
+#     role_id: "${VAULT_APPROLE_ROLE_ID}"
+#     secret_id: "${VAULT_APPROLE_SECRET_ID}"
+#   aws:
+#     role: "kafka-processor"
+#     region: "us-west-2"
+
+# Key management settings
+key_management:
+  # Minimum key versions to keep for decryption
+  min_versions: 3
+  
+  # Maximum key versions to keep
+  max_versions: 10
+  
+  # Key expiration settings
+  expiration:
+    enabled: true
+    ttl: "720h" # 30 days
+
+# Monitoring and logging
+monitoring:
+  # Log encryption/decryption operations
+  log_operations: true
+  
+  # Metrics collection
+  metrics_enabled: true
+  
+  # Health check interval
+  health_check_interval: "30s"
+
+# Security settings
+security:
+  # Require authentication for all operations
+  require_auth: true
+  
+  # Enable audit logging
+  audit_logging: true
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_second: 100

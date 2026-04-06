@@ -1,7 +1,9 @@
+/*
 package main
 
+
 import (
-	json "encoding/json"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log-processor/config"
@@ -32,33 +34,34 @@ func generator(doneCh chan struct{}, logReader *consumer.KafkaConsumer) <-chan e
 	return logCh
 }
 
-func encryptJsonStream(doneCh chan struct{}, logCh <-chan entities.Log, sensitiveFields []string, vaultManager *crypto.VaultKeyManager) <-chan entities.Log {
+func encryptJson(doneCh chan struct{}, logCh <-chan entities.Log, vaultManager *crypto.VaultKeyManager) <-chan entities.Log {
 	outputCh := make(chan entities.Log)
-	err := crypto.InitGlobalVaultCipher(vaultManager)
-	fmt.Println(sensitiveFields)
-	// Инициализируем глобальный Vault шифратор
-	if err != nil {
-		fmt.Printf("Error initializing Vault cipher: %v\n", err)
-		close(outputCh)
-		return outputCh
-	}
 	go func() {
 		for {
 			select {
 			case log := <-logCh:
 				fmt.Println("=== Encrypt Json ===")
-
-				encrypted, err := crypto.EncryptJSONFields([]byte(log.LogBody), sensitiveFields)
+				
+				// Используем Vault напрямую для шифрования JSON
+				encryptedData, err := vaultManager.Encrypt([]byte(log.LogBody))
 				if err != nil {
 					fmt.Printf("Error encrypting log: %v\n", err)
 					continue
 				}
-
+				
 				// Создаем новый лог с зашифрованным телом
 				encryptedLog := log
-				encryptedLog.LogBody = string(encrypted)
+				
+				// Сериализуем зашифрованные данные в JSON
+				encryptedBytes, err := json.Marshal(encryptedData)
+				if err != nil {
+					fmt.Printf("Error marshaling encrypted data: %v\n", err)
+					continue
+				}
+				
+				encryptedLog.LogBody = string(encryptedBytes)
 				outputCh <- encryptedLog
-
+				
 			case <-doneCh:
 				return
 			}
@@ -68,8 +71,7 @@ func encryptJsonStream(doneCh chan struct{}, logCh <-chan entities.Log, sensitiv
 }
 
 func main() {
-
-	// Настройка Vault для тестирования
+	// Настройка Vault
 	vaultConfig := &crypto.VaultConfig{
 		Address:      "http://localhost:8200",
 		Token:        "my-root-token",
@@ -102,49 +104,74 @@ func main() {
 		fmt.Printf("  Version %d: %s\n", version, status)
 	}
 
-	// Тест шифрования/дешифрования полей JSON
-	fmt.Printf("\n=== Testing Vault JSON Field Encryption ===\n")
-	testMessage := `{"user": {"username": "john", "password": "secret123", "email": "john@example.com"}, "api_key": "sk-production-key", "request_id": "req-123"}`
+	// Тест шифрования/дешифрования
+	fmt.Printf("\n=== Testing Vault Encryption ===\n")
+	testMessage := `{"user": {"username": "john", "password": "secret123"}, "api_key": "sk-production-key"}`
 	fmt.Printf("Original JSON: %s\n", testMessage)
 
-	// Инициализируем глобальный Vault шифратор
-	err = crypto.InitGlobalVaultCipher(vaultManager)
+	encryptedData, err := vaultManager.Encrypt([]byte(testMessage))
 	if err != nil {
-		log.Fatalf("Failed to initialize Vault cipher: %v", err)
+		log.Fatalf("Failed to encrypt test message: %v", err)
 	}
 
-	// Шифруем только чувствительные поля
-	sensitiveFields := []string{"password", "api_key"}
-	encrypted, err := crypto.EncryptJSONFields([]byte(testMessage), sensitiveFields)
+	fmt.Printf("Encrypted: %s\n", encryptedData.Ciphertext)
+	fmt.Printf("Key Version: %d\n", encryptedData.KeyVersion)
+
+	decrypted, err := vaultManager.Decrypt(encryptedData)
 	if err != nil {
-		log.Fatalf("Failed to encrypt JSON fields: %v", err)
+		log.Fatalf("Failed to decrypt test message: %v", err)
 	}
 
-	fmt.Printf("Encrypted JSON: %s\n", string(encrypted))
+	fmt.Printf("Decrypted: %s\n", string(decrypted))
 
-	var encryptedData map[string]interface{}
-	err = json.Unmarshal(encrypted, &encryptedData)
+	// Демонстрация ротации ключей
+	fmt.Printf("\n=== Testing Key Rotation ===\n")
+	fmt.Printf("Note: Manual rotation requires Vault permissions\n")
+	fmt.Printf("In production, keys rotate automatically every 24 hours\n")
+	
+	// Показываем информацию о текущих ключах
+	keyInfo = vaultManager.GetKeyInfo()
+	fmt.Printf("Current key versions: %d\n", len(keyInfo))
+	for version, key := range keyInfo {
+		status := "inactive"
+		if key.IsActive {
+			status = "active"
+		}
+		fmt.Printf("  Version %d: %s\n", version, status)
+	}
+
+	// Тест шифрования с текущим ключом
+	testMessage2 := `{"user": {"username": "alice", "password": "newpass456"}, "session_token": "sess-abc123"}`
+	encryptedData2, err := vaultManager.Encrypt([]byte(testMessage2))
 	if err != nil {
-		log.Fatalf("Failed to parse encrypted JSON: %v", err)
+		log.Fatalf("Failed to encrypt with new key: %v", err)
 	}
 
-	if user, ok := encryptedData["user"].(map[string]interface{}); ok {
-		fmt.Printf("Username (not encrypted): %v\n", user["username"])
-		fmt.Printf("Email (not encrypted): %v\n", user["email"])
-		fmt.Printf("Password (encrypted): %v\n", user["password"])
+	fmt.Printf("New message encrypted with version: %d\n", encryptedData2.KeyVersion)
+
+	// Проверяем что старое сообщение все еще дешифруется
+	_, err = vaultManager.Decrypt(encryptedData)
+	if err != nil {
+		log.Fatalf("Failed to decrypt old message: %v", err)
 	}
-	fmt.Printf("API Key (encrypted): %v\n", encryptedData["api_key"])
-	fmt.Printf("Request ID (not encrypted): %v\n", encryptedData["request_id"])
+	fmt.Printf("Old message still decryptable: ✅\n")
+
+	// Проверяем что новое сообщение дешифруется
+	_, err = vaultManager.Decrypt(encryptedData2)
+	if err != nil {
+		log.Fatalf("Failed to decrypt new message: %v", err)
+	}
+	fmt.Printf("New message decryptable: ✅\n")
 
 	// Загрузка конфигурации Kafka
 	fmt.Printf("\n=== Kafka Integration ===\n")
 	cfg, err := config.NewConfig("config/config.yaml")
 	if err != nil {
-		log.Printf("Warning: Could not load Kafka config: %v\n", err)
+		log.Printf("Warning: Could not load Kafka config: %v", err)
 		fmt.Printf("Skipping Kafka integration demo\n")
 		return
 	}
-
+	
 	consumerConfig := kafka.ReaderConfig{
 		Brokers: cfg.Kafka.Brokers,
 		Topic:   cfg.Kafka.Topic,
@@ -152,24 +179,20 @@ func main() {
 	}
 	reader := kafka.NewReader(consumerConfig)
 	logReader := consumer.NewKafkaConsumer(*reader)
-
+	
 	doneCh := make(chan struct{})
 	logCh := generator(doneCh, logReader)
-	outputCh := encryptJsonStream(doneCh, logCh, cfg.Crypto.FieldsToEncrypt, vaultManager)
-
+	outputCh := encryptJson(doneCh, logCh, vaultManager)
+	
 	fmt.Printf("Starting Kafka log processing with Vault encryption...\n")
-	fmt.Printf("All log messages will be encrypted with current key version\n")
 	fmt.Printf("Press Ctrl+C to stop\n")
-
+	
 	// Обработка зашифрованных логов
 	for encryptedLog := range outputCh {
 		fmt.Printf("Processed encrypted log: %+v\n", encryptedLog)
 	}
 
 	defer reader.Close()
-
 }
-// docker exec -it go-vault-1 sh -c "VAULT_ADDR='http://127.0.0.1:8200' VAULT_TOKEN='my-root-token' vault secrets enable transit"
-// docker exec go-vault-1 vault secrets list -address=http://127.0.0.1:8200
-// docker exec go-vault-1 vault secrets enable -address=http://127.0.0.1:8200 transit
-// 
+
+ */

@@ -11,7 +11,7 @@ import (
 )
 
 var wg sync.WaitGroup
-var messageAmount = 100
+var messageAmount = 5
 
 func AddLogsToKafka() {
 	writer := kafka.NewWriter(kafka.WriterConfig{
@@ -21,16 +21,25 @@ func AddLogsToKafka() {
 	defer writer.Close()
 
 	wg.Add(messageAmount)
+
 	for i := 0; i < messageAmount; i++ {
 		iStr := strconv.Itoa(i)
-		msg := []byte(`{status: 200,` +
-			`partner_id=10` +
-			`passport=1232133312,` +
-			`snils=123124124123123,` +
-			`otherdata="asdasdasdasdasdasddfgadfadsdfasdf}` +
-			`id=` + iStr)
 
-		go WriteLogsToKafka(writer, msg)
+		msg := "{\n" +
+			`  "email":` + strconv.Quote("root@example.com") + ",\n" +
+			`  "user": {` +
+			`"email":` + strconv.Quote("alice@example.com") + ", " +
+			`"id":` + iStr + `, ` +
+			`"profile": {"contact":{"email":` + strconv.Quote("deep@example.com") + `}}` +
+			"},\n" +
+			`  "companies": [` +
+			`{"email":` + strconv.Quote("c1@example.com") + `}, ` +
+			`{"sens": {"passport":` + strconv.Quote("1233123233") + `}}` +
+			"]\n" +
+			"}"
+
+		go WriteLogsToKafka(writer, []byte(msg))
+
 	}
 	wg.Wait()
 }
@@ -47,4 +56,5 @@ func WriteLogsToKafka(writer *kafka.Writer, message []byte) {
 		return
 	}
 	fmt.Println("message delivered")
+
 }
