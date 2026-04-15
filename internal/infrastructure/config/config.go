@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,6 +13,8 @@ type Config struct {
 	Crypto     CryptoConfig     `yaml:"crypto"`
 	Vault      VaultConfig      `yaml:"vault"`
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
+	WorkerPool WorkerPoolConfig `yaml:"worker_pool"`
+	Batch      BatchConfig      `yaml:"batch"`
 }
 
 // KafkaConfig holds Kafka configuration
@@ -38,6 +41,16 @@ type ClickHouseConfig struct {
 	Port     int    `yaml:"port"`
 	Login    string `yaml:"login"`
 	Password string `yaml:"password"`
+}
+
+type WorkerPoolConfig struct {
+	WorkerCount     int `yaml:"worker_count"`
+	ChannelBufferSize int `yaml:"channel_buffer_size"`
+}
+
+type BatchConfig struct {
+	Size          int           `yaml:"size"`
+	FlushInterval time.Duration `yaml:"flush_interval"`
 }
 
 // NewConfig loads configuration from a YAML file
@@ -72,9 +85,17 @@ func DefaultConfig() *Config {
 		},
 		ClickHouse: ClickHouseConfig{
 			Address:  "localhost",
-			Port:     8123,
+			Port:     9000,
 			Login:    "default",
 			Password: "default",
+		},
+		WorkerPool: WorkerPoolConfig{
+			WorkerCount:       4,
+			ChannelBufferSize: 100,
+		},
+		Batch: BatchConfig{
+			Size:          10,
+			FlushInterval: 5 * time.Second,
 		},
 	}
 }
