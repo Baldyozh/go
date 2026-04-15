@@ -1,10 +1,19 @@
 kafka:
-  path:
+  brokers:
     - "localhost:9092"
   topic: "logs"
-  group_id: "1"
+  group_id: "log-processor"
 crypto:
   fields_to_encrypt:
     - "passport"
     - "snils"
-
+vault:
+  address: "http://localhost:8200"
+  token: "my-root-token"
+  transit_path: "transit"
+  key_name: "kafka-encryption"
+clickhouse:
+  address: "localhost"
+  port: 8123
+  login: "default"
+  password: "default"

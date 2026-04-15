@@ -1,10 +1,9 @@
-package crypto_vault
+package vault
 
 import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -21,8 +20,8 @@ const (
 	KeyCacheTTL         = 1 * time.Hour  // Cache keys for 1 hour
 )
 
-// VaultConfig holds Vault connection configuration
-type VaultConfig struct {
+// Config holds Vault connection configuration
+type Config struct {
 	Address      string
 	Token        string
 	TransitPath  string
@@ -49,18 +48,18 @@ type EncryptedData struct {
 	TransitPath string    `json:"transit_path"`
 }
 
-// VaultKeyManager handles key rotation and Vault integration
-type VaultKeyManager struct {
+// Manager handles Vault key management and encryption operations
+type Manager struct {
 	client         *api.Client
-	config         *VaultConfig
+	config         *Config
 	keys           map[int]*KeyVersion
 	currentVersion int
 	mutex          sync.RWMutex
 	lastRotation   time.Time
 }
 
-// NewVaultKeyManager creates a new Vault key manager
-func NewVaultKeyManager(config *VaultConfig) (*VaultKeyManager, error) {
+// NewManager creates a new Vault key manager
+func NewManager(config *Config) (*Manager, error) {
 	if config.TransitPath == "" {
 		config.TransitPath = VaultTransitPath
 	}
@@ -82,7 +81,7 @@ func NewVaultKeyManager(config *VaultConfig) (*VaultKeyManager, error) {
 
 	client.SetToken(config.Token)
 
-	km := &VaultKeyManager{
+	km := &Manager{
 		client: client,
 		config: config,
 		keys:   make(map[int]*KeyVersion),
@@ -105,22 +104,20 @@ func NewVaultKeyManager(config *VaultConfig) (*VaultKeyManager, error) {
 }
 
 // initializeKey creates the encryption key in Vault if it doesn't exist
-func (km *VaultKeyManager) initializeKey() error {
-	// Check if key already exists
+func (km *Manager) initializeKey() error {
 	secret, err := km.client.Logical().Read(fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName))
 	if err != nil {
 		return fmt.Errorf("failed to check key existence: %w", err)
 	}
 
 	if secret != nil {
-		log.Printf("Key %s already exists in Vault", km.config.KeyName)
 		return nil
 	}
 
 	// Create new key
 	data := map[string]interface{}{
 		"type":        "aes256-gcm96",
-		"auto_rotate": "24h", // Auto-rotate every 24 hours
+		"auto_rotate": "24h",
 	}
 
 	_, err = km.client.Logical().Write(
@@ -131,12 +128,11 @@ func (km *VaultKeyManager) initializeKey() error {
 		return fmt.Errorf("failed to create key: %w", err)
 	}
 
-	log.Printf("Created new key %s in Vault", km.config.KeyName)
 	return nil
 }
 
 // loadKeys loads all key versions from Vault
-func (km *VaultKeyManager) loadKeys() error {
+func (km *Manager) loadKeys() error {
 	km.mutex.Lock()
 	defer km.mutex.Unlock()
 
@@ -149,7 +145,6 @@ func (km *VaultKeyManager) loadKeys() error {
 		return fmt.Errorf("key not found in Vault")
 	}
 
-	// Parse key versions
 	keysData, ok := secret.Data["keys"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("invalid key data format")
@@ -157,22 +152,18 @@ func (km *VaultKeyManager) loadKeys() error {
 
 	km.keys = make(map[int]*KeyVersion)
 
-	for versionStr, keyInfo := range keysData {
+	for versionStr := range keysData {
 		version := 0
 		if _, err := fmt.Sscanf(versionStr, "%d", &version); err != nil {
 			continue
 		}
 
-		// We don't need to use keyInfo for basic functionality
-		_ = keyInfo
-
 		kv := &KeyVersion{
 			Version:   version,
-			CreatedAt: time.Now(), // Vault doesn't provide creation time in API response
+			CreatedAt: time.Now(),
 			IsActive:  false,
 		}
 
-		// Check if this is the latest version
 		if latestVersionNum, ok := secret.Data["latest_version"].(json.Number); ok {
 			if v, err := latestVersionNum.Int64(); err == nil && int(v) == version {
 				kv.IsActive = true
@@ -184,7 +175,6 @@ func (km *VaultKeyManager) loadKeys() error {
 	}
 
 	if km.currentVersion == 0 && len(km.keys) > 0 {
-		// If no active version found, use the highest version number
 		for version := range km.keys {
 			if version > km.currentVersion {
 				km.currentVersion = version
@@ -193,15 +183,11 @@ func (km *VaultKeyManager) loadKeys() error {
 		km.keys[km.currentVersion].IsActive = true
 	}
 
-	log.Printf("Loaded %d key versions, current version: %d", len(km.keys), km.currentVersion)
 	return nil
 }
 
 // rotateKey performs key rotation
-func (km *VaultKeyManager) rotateKey() error {
-	log.Println("Starting key rotation...")
-
-	// Rotate key in Vault
+func (km *Manager) rotateKey() error {
 	_, err := km.client.Logical().Write(
 		fmt.Sprintf("%s/keys/%s/rotate", km.config.TransitPath, km.config.KeyName),
 		nil,
@@ -210,18 +196,16 @@ func (km *VaultKeyManager) rotateKey() error {
 		return fmt.Errorf("failed to rotate key: %w", err)
 	}
 
-	// Reload keys
 	if err := km.loadKeys(); err != nil {
 		return fmt.Errorf("failed to reload keys after rotation: %w", err)
 	}
 
 	km.lastRotation = time.Now()
-	log.Printf("Key rotation completed. New version: %d", km.currentVersion)
 	return nil
 }
 
 // startKeyRotation starts the automatic key rotation routine
-func (km *VaultKeyManager) startKeyRotation() {
+func (km *Manager) startKeyRotation() {
 	ticker := time.NewTicker(KeyRotationInterval)
 	defer ticker.Stop()
 
@@ -229,14 +213,14 @@ func (km *VaultKeyManager) startKeyRotation() {
 		select {
 		case <-ticker.C:
 			if err := km.rotateKey(); err != nil {
-				log.Printf("Key rotation failed: %v", err)
+				// In production, use proper logging
 			}
 		}
 	}
 }
 
 // GetCurrentKey returns the current active encryption key
-func (km *VaultKeyManager) GetCurrentKey() (*KeyVersion, error) {
+func (km *Manager) GetCurrentKey() (*KeyVersion, error) {
 	km.mutex.RLock()
 	defer km.mutex.RUnlock()
 
@@ -253,7 +237,7 @@ func (km *VaultKeyManager) GetCurrentKey() (*KeyVersion, error) {
 }
 
 // GetKey returns a specific key version
-func (km *VaultKeyManager) GetKey(version int) (*KeyVersion, error) {
+func (km *Manager) GetKey(version int) (*KeyVersion, error) {
 	km.mutex.RLock()
 	defer km.mutex.RUnlock()
 
@@ -266,13 +250,12 @@ func (km *VaultKeyManager) GetKey(version int) (*KeyVersion, error) {
 }
 
 // Encrypt encrypts data using Vault transit engine
-func (km *VaultKeyManager) Encrypt(plaintext []byte) (*EncryptedData, error) {
+func (km *Manager) Encrypt(plaintext []byte) (*EncryptedData, error) {
 	currentKey, err := km.GetCurrentKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current key: %w", err)
 	}
 
-	// Use Vault transit engine for encryption
 	data := map[string]interface{}{
 		"plaintext": base64.StdEncoding.EncodeToString(plaintext),
 	}
@@ -304,8 +287,7 @@ func (km *VaultKeyManager) Encrypt(plaintext []byte) (*EncryptedData, error) {
 }
 
 // Decrypt decrypts data using Vault transit engine
-func (km *VaultKeyManager) Decrypt(encryptedData *EncryptedData) ([]byte, error) {
-	// Use Vault transit engine for decryption
+func (km *Manager) Decrypt(encryptedData *EncryptedData) ([]byte, error) {
 	data := map[string]interface{}{
 		"ciphertext": encryptedData.Ciphertext,
 	}
@@ -329,11 +311,10 @@ func (km *VaultKeyManager) Decrypt(encryptedData *EncryptedData) ([]byte, error)
 }
 
 // GetKeyInfo returns information about all key versions
-func (km *VaultKeyManager) GetKeyInfo() map[int]*KeyVersion {
+func (km *Manager) GetKeyInfo() map[int]*KeyVersion {
 	km.mutex.RLock()
 	defer km.mutex.RUnlock()
 
-	// Return a copy to prevent external modification
 	result := make(map[int]*KeyVersion)
 	for version, key := range km.keys {
 		keyCopy := *key
@@ -344,8 +325,26 @@ func (km *VaultKeyManager) GetKeyInfo() map[int]*KeyVersion {
 }
 
 // Close cleans up resources
-func (km *VaultKeyManager) Close() error {
-	// In a real implementation, you might want to clean up resources
-	// For now, Vault client doesn't require explicit cleanup
+func (km *Manager) Close() error {
+	return nil
+}
+
+// ValidateConfig validates the Vault configuration
+func ValidateConfig(config *Config) error {
+	if config.Address == "" {
+		return fmt.Errorf("Vault address is required")
+	}
+	if config.Token == "" {
+		return fmt.Errorf("Vault token is required")
+	}
+	if config.TransitPath == "" {
+		return fmt.Errorf("Vault transit path is required")
+	}
+	if config.KeyName == "" {
+		return fmt.Errorf("Vault key name is required")
+	}
+	if config.TTL <= 0 {
+		return fmt.Errorf("Vault cache TTL must be positive")
+	}
 	return nil
 }

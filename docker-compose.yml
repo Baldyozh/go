@@ -46,8 +46,8 @@ services:
 
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      #- ./clickhouse_config:/etc/clickhouse-server/config.d
-      #- ./clickhouse_users:/etc/clickhouse-server/users.d
+      - ./clickhouse_config:/etc/clickhouse-server/config.d
+      - ./clickhouse_users:/etc/clickhouse-server/users.d
     ulimits:
       nofile:
         soft: 262144
