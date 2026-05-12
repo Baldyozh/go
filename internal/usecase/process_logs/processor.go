@@ -2,9 +2,10 @@ package process_logs
 
 import (
 	"log"
-	"log-processor/internal/domain/entities"
 	"sync"
 	"time"
+
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
 )
 
 // LogConsumer is the interface for reading logs from a message broker

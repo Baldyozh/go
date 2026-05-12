@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"log-processor/internal/domain/entities"
-	"log-processor/internal/usecase/add_logs"
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
+	"github.com/Baldyozh/log-processor/internal/usecase/add_logs"
 
 	"github.com/segmentio/kafka-go"
 )

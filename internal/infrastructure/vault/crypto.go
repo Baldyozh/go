@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"log-processor/internal/usecase/process_logs"
+	"github.com/Baldyozh/log-processor/internal/usecase/process_logs"
 )
 
 const (
@@ -110,8 +110,8 @@ func (a *AESGCM) DecryptString(cipherText string) (string, error) {
 
 // Encrypter implements LogEncrypter interface using Vault
 type Encrypter struct {
-	manager         *Manager
-	directCipher    *DirectCipher
+	manager      *Manager
+	directCipher *DirectCipher
 }
 
 // DirectCipher uses Vault transit engine directly without local AES-GCM
@@ -342,6 +342,182 @@ func (e *Encrypter) applyPositionalToNode(node interface{}, segments []string) e
 
 		for i := range n {
 			if err := e.applyPositionalToNode(n[i], segments); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unexpected type %T while applying positional path", node)
+	}
+}
+
+// DecryptFields decrypts encrypted fields in JSON data
+func (e *Encrypter) DecryptFields(inputJSON []byte, paths []string) ([]byte, error) {
+	var root interface{}
+	if err := json.Unmarshal(inputJSON, &root); err != nil {
+		return nil, err
+	}
+
+	// Split paths into positional (contain ".") and global names
+	globalNames := map[string]struct{}{}
+	positional := [][]string{}
+
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if strings.Contains(p, ".") {
+			positional = append(positional, strings.Split(p, "."))
+		} else {
+			globalNames[p] = struct{}{}
+		}
+	}
+
+	// Recursive traversal: node, positionalPaths (each as []string)
+	if err := e.walkAndDecrypt(root, positional, globalNames); err != nil {
+		return nil, err
+	}
+
+	out, err := json.Marshal(root)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// walkAndDecrypt recursively traverses node and decrypts matching fields
+func (e *Encrypter) walkAndDecrypt(node interface{}, positional [][]string, globalNames map[string]struct{}) error {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		// First process all keys: global names and recursive traversal of values
+		for k, v := range n {
+			// Global name - if key matches and value is string, decrypt
+			if _, ok := globalNames[k]; ok {
+				if s, isStr := v.(string); isStr {
+					dec, err := e.directCipher.DecryptString(s)
+					if err != nil {
+						return err
+					}
+					n[k] = dec
+					continue
+				}
+			}
+			// Recursive traversal for all values
+			if err := e.walkAndDecrypt(v, positional, globalNames); err != nil {
+				return err
+			}
+		}
+
+		// Now process positional paths
+		for _, segs := range positional {
+			if len(segs) == 0 {
+				continue
+			}
+			first := segs[0]
+			if val, exists := n[first]; exists {
+				if len(segs) == 1 {
+					if s, isStr := val.(string); isStr {
+						dec, err := e.directCipher.DecryptString(s)
+						if err != nil {
+							return err
+						}
+						n[first] = dec
+						continue
+					} else {
+						return fmt.Errorf("value at path %q is not a string", strings.Join(segs, "."))
+					}
+				}
+				if err := e.applyPositionalToNodeDecrypt(val, segs[1:]); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+
+	case []interface{}:
+		for i := range n {
+			if err := e.walkAndDecrypt(n[i], positional, globalNames); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// applyPositionalToNodeDecrypt applies segments to node for decryption
+func (e *Encrypter) applyPositionalToNodeDecrypt(node interface{}, segments []string) error {
+	if len(segments) == 0 {
+		return errors.New("empty positional segments")
+	}
+
+	switch n := node.(type) {
+	case map[string]interface{}:
+		key := segments[0]
+		val, exists := n[key]
+		if !exists {
+			return fmt.Errorf("key %q not found", key)
+		}
+		if len(segments) == 1 {
+			if s, ok := val.(string); ok {
+				dec, err := e.directCipher.DecryptString(s)
+				if err != nil {
+					return err
+				}
+				n[key] = dec
+				return nil
+			}
+			return fmt.Errorf("value at %q is not a string", strings.Join(segments, "."))
+		}
+		return e.applyPositionalToNodeDecrypt(val, segments[1:])
+
+	case []interface{}:
+		seg := segments[0]
+
+		if seg == "*" {
+			for i := range n {
+				if len(segments) == 1 {
+					if s, ok := n[i].(string); ok {
+						dec, err := e.directCipher.DecryptString(s)
+						if err != nil {
+							return err
+						}
+						n[i] = dec
+					} else {
+						return fmt.Errorf("array element %d is not a string", i)
+					}
+				} else {
+					if err := e.applyPositionalToNodeDecrypt(n[i], segments[1:]); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}
+
+		if idx, err := strconv.Atoi(seg); err == nil {
+			if idx < 0 || idx >= len(n) {
+				return fmt.Errorf("array index %d out of range", idx)
+			}
+			if len(segments) == 1 {
+				if s, ok := n[idx].(string); ok {
+					dec, err := e.directCipher.DecryptString(s)
+					if err != nil {
+						return err
+					}
+					n[idx] = dec
+					return nil
+				}
+				return fmt.Errorf("array element %d is not a string", idx)
+			}
+			return e.applyPositionalToNodeDecrypt(n[idx], segments[1:])
+		}
+
+		for i := range n {
+			if err := e.applyPositionalToNodeDecrypt(n[i], segments); err != nil {
 				return err
 			}
 		}

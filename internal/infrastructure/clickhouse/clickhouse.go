@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log-processor/internal/domain/entities"
 
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
@@ -59,6 +59,11 @@ func (c *Client) Close() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
+}
+
+// Conn returns the underlying ClickHouse connection
+func (c *Client) Conn() clickhouse.Conn {
+	return c.conn
 }
 
 func (c *Client) EnsureTableExists() error {

@@ -15,6 +15,8 @@ type Config struct {
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	WorkerPool WorkerPoolConfig `yaml:"worker_pool"`
 	Batch      BatchConfig      `yaml:"batch"`
+	Postgres   PostgresConfig   `yaml:"postgres"`
+	API        APIConfig        `yaml:"api"`
 }
 
 // KafkaConfig holds Kafka configuration
@@ -26,7 +28,15 @@ type KafkaConfig struct {
 
 // CryptoConfig holds encryption configuration
 type CryptoConfig struct {
-	FieldsToEncrypt []string `yaml:"fields_to_encrypt"`
+	FieldsToEncrypt   []string              `yaml:"fields_to_encrypt"`
+	EncryptionType    string                `yaml:"encryption_type"`    // "vault" or "local"
+	LocalEncryption   LocalEncryptionConfig `yaml:"local_encryption"`
+}
+
+// LocalEncryptionConfig holds local encryption configuration
+type LocalEncryptionConfig struct {
+	KeyRotationInterval time.Duration `yaml:"key_rotation_interval"`
+	Algorithm           string        `yaml:"algorithm"`
 }
 
 // VaultConfig holds Vault configuration
@@ -53,6 +63,23 @@ type BatchConfig struct {
 	FlushInterval time.Duration `yaml:"flush_interval"`
 }
 
+// PostgresConfig holds PostgreSQL configuration
+type PostgresConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Database string `yaml:"database"`
+}
+
+// APIConfig holds API server configuration
+type APIConfig struct {
+	Port         string        `yaml:"port"`
+	JWTSecret    string        `yaml:"jwt_secret"`
+	JWTExpiry    time.Duration `yaml:"jwt_expiry"`
+	JWTIssuer    string        `yaml:"jwt_issuer"`
+}
+
 // NewConfig loads configuration from a YAML file
 func NewConfig(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
@@ -76,6 +103,11 @@ func DefaultConfig() *Config {
 		},
 		Crypto: CryptoConfig{
 			FieldsToEncrypt: []string{"password", "api_key", "passport", "snils"},
+			EncryptionType:  "vault",
+			LocalEncryption: LocalEncryptionConfig{
+				KeyRotationInterval: 24 * time.Hour,
+				Algorithm:           "aes-gcm",
+			},
 		},
 		Vault: VaultConfig{
 			Address:     "http://localhost:8200",

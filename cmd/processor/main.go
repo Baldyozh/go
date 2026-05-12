@@ -3,14 +3,15 @@ package main
 import (
 	"fmt"
 	"log"
-	"log-processor/internal/infrastructure/clickhouse"
-	"log-processor/internal/infrastructure/config"
-	"log-processor/internal/infrastructure/kafka"
-	"log-processor/internal/infrastructure/vault"
-	"log-processor/internal/usecase/process_logs"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/Baldyozh/log-processor/internal/infrastructure/clickhouse"
+	"github.com/Baldyozh/log-processor/internal/infrastructure/config"
+	"github.com/Baldyozh/log-processor/internal/infrastructure/kafka"
+	"github.com/Baldyozh/log-processor/internal/infrastructure/vault"
+	"github.com/Baldyozh/log-processor/internal/usecase/process_logs"
 )
 
 func main() {
@@ -48,8 +49,22 @@ func main() {
 	}
 	defer vaultManager.Close()
 
-	// Create encrypter
-	encrypter := vault.NewEncrypter(vaultManager)
+	// Create encrypter based on configuration
+	var encrypter process_logs.LogEncrypter
+	switch cfg.Crypto.EncryptionType {
+	case "local":
+		localEncrypter := vault.NewLocalEncrypter(vaultManager, cfg.Crypto.LocalEncryption, cfg.Crypto.FieldsToEncrypt)
+		if err := localEncrypter.Initialize(); err != nil {
+			log.Fatalf("Failed to initialize local encrypter: %v", err)
+		}
+		encrypter = localEncrypter
+		fmt.Printf("Using local encryption with key from Vault\n")
+	case "vault":
+		encrypter = vault.NewEncrypter(vaultManager)
+		fmt.Printf("Using Vault transit encryption\n")
+	default:
+		log.Fatalf("Unknown encryption type: %s", cfg.Crypto.EncryptionType)
+	}
 
 	// Create Kafka consumer
 	consumer := kafka.NewConsumer(
@@ -86,13 +101,18 @@ func main() {
 		close(doneCh)
 	}()
 
-	fmt.Printf("Starting Kafka log processor with Vault encryption...\n")
+	fmt.Printf("Starting Kafka log processor...\n")
 	fmt.Printf("Vault Address: %s\n", vaultConfig.Address)
 	fmt.Printf("ClickHouse Address: %s:%d\n", cfg.ClickHouse.Address, cfg.ClickHouse.Port)
 	fmt.Printf("Worker Pool: %d workers\n", cfg.WorkerPool.WorkerCount)
 	fmt.Printf("Batch Size: %d, Flush Interval: %s\n", cfg.Batch.Size, cfg.Batch.FlushInterval)
 	fmt.Printf("Topic: %s\n", cfg.Kafka.Topic)
+	fmt.Printf("Encryption Type: %s\n", cfg.Crypto.EncryptionType)
 	fmt.Printf("Fields to encrypt: %v\n", cfg.Crypto.FieldsToEncrypt)
+	if cfg.Crypto.EncryptionType == "local" {
+		fmt.Printf("Key Rotation Interval: %s\n", cfg.Crypto.LocalEncryption.KeyRotationInterval)
+		fmt.Printf("Algorithm: %s\n", cfg.Crypto.LocalEncryption.Algorithm)
+	}
 	fmt.Printf("Press Ctrl+C to stop\n")
 
 	// Process logs (blocks until shutdown)

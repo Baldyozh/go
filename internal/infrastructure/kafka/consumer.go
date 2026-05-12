@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"log-processor/internal/domain/entities"
-	"log-processor/internal/usecase/process_logs"
-
 	"encoding/json"
 
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
+	"github.com/Baldyozh/log-processor/internal/usecase/process_logs"
 	"github.com/segmentio/kafka-go"
 )
 

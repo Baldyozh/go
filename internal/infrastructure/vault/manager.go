@@ -50,7 +50,7 @@ type EncryptedData struct {
 
 // Manager handles Vault key management and encryption operations
 type Manager struct {
-	client         *api.Client
+	Client         *api.Client
 	config         *Config
 	keys           map[int]*KeyVersion
 	currentVersion int
@@ -82,7 +82,7 @@ func NewManager(config *Config) (*Manager, error) {
 	client.SetToken(config.Token)
 
 	km := &Manager{
-		client: client,
+		Client: client,
 		config: config,
 		keys:   make(map[int]*KeyVersion),
 	}
@@ -105,7 +105,7 @@ func NewManager(config *Config) (*Manager, error) {
 
 // initializeKey creates the encryption key in Vault if it doesn't exist
 func (km *Manager) initializeKey() error {
-	secret, err := km.client.Logical().Read(fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName))
+	secret, err := km.Client.Logical().Read(fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName))
 	if err != nil {
 		return fmt.Errorf("failed to check key existence: %w", err)
 	}
@@ -120,7 +120,7 @@ func (km *Manager) initializeKey() error {
 		"auto_rotate": "24h",
 	}
 
-	_, err = km.client.Logical().Write(
+	_, err = km.Client.Logical().Write(
 		fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName),
 		data,
 	)
@@ -136,7 +136,7 @@ func (km *Manager) loadKeys() error {
 	km.mutex.Lock()
 	defer km.mutex.Unlock()
 
-	secret, err := km.client.Logical().Read(fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName))
+	secret, err := km.Client.Logical().Read(fmt.Sprintf("%s/keys/%s", km.config.TransitPath, km.config.KeyName))
 	if err != nil {
 		return fmt.Errorf("failed to read key info: %w", err)
 	}
@@ -188,7 +188,7 @@ func (km *Manager) loadKeys() error {
 
 // rotateKey performs key rotation
 func (km *Manager) rotateKey() error {
-	_, err := km.client.Logical().Write(
+	_, err := km.Client.Logical().Write(
 		fmt.Sprintf("%s/keys/%s/rotate", km.config.TransitPath, km.config.KeyName),
 		nil,
 	)
@@ -261,7 +261,7 @@ func (km *Manager) Encrypt(plaintext []byte) (*EncryptedData, error) {
 	}
 
 	path := fmt.Sprintf("%s/encrypt/%s", km.config.TransitPath, km.config.KeyName)
-	secret, err := km.client.Logical().Write(path, data)
+	secret, err := km.Client.Logical().Write(path, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt with Vault: %w", err)
 	}
@@ -293,7 +293,7 @@ func (km *Manager) Decrypt(encryptedData *EncryptedData) ([]byte, error) {
 	}
 
 	path := fmt.Sprintf("%s/decrypt/%s", km.config.TransitPath, km.config.KeyName)
-	secret, err := km.client.Logical().Write(path, data)
+	secret, err := km.Client.Logical().Write(path, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt with Vault: %w", err)
 	}

@@ -7,7 +7,7 @@ crypto:
   fields_to_encrypt:
     - "passport"
     - "snils"
-  encryption_type: "vault"  # "vault" or "local"
+  encryption_type: "local"  # "vault" or "local"
   local_encryption:
     key_rotation_interval: "24h"
     algorithm: "aes-gcm"
@@ -22,8 +22,8 @@ clickhouse:
   login: "default"
   password: "default"
 worker_pool:
-  worker_count: 4
-  channel_buffer_size: 100
+  worker_count: 6
+  channel_buffer_size: 300
 batch:
   size: 5000
   flush_interval: "5s"

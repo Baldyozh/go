@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"log-processor/internal/domain/entities"
-	"log-processor/internal/infrastructure/kafka"
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
+	"github.com/Baldyozh/log-processor/internal/infrastructure/kafka"
 )
 
 func main() {
 	brokers := []string{"localhost:9092"}
 	topic := "logs"
-	messageCount := 5
+	messageCount := 100000
 
 	producer := kafka.NewProducer(brokers, topic)
 	defer producer.Close()

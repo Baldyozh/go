@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	"log-processor/internal/domain/entities"
+	"github.com/Baldyozh/log-processor/internal/domain/entities"
 )
 
 // LogProducer is the interface for writing logs to a message broker
