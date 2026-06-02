@@ -152,9 +152,28 @@ func (v *DirectCipher) EncryptString(plainText string) (string, error) {
 
 // DecryptString decrypts a string using Vault transit engine
 func (v *DirectCipher) DecryptString(cipherText string) (string, error) {
+	// Try to parse as JSON first
 	var encryptedData EncryptedData
 	err := json.Unmarshal([]byte(cipherText), &encryptedData)
 	if err != nil {
+		// If direct parsing fails, try to handle escaped JSON strings
+		// Check if it looks like an escaped JSON string
+		if strings.HasPrefix(cipherText, "{\"") && strings.HasSuffix(cipherText, "\"}") {
+			// Try to unescape and parse again
+			unescaped, unescapeErr := jsonUnescape(cipherText)
+			if unescapeErr == nil {
+				err = json.Unmarshal([]byte(unescaped), &encryptedData)
+				if err == nil {
+					// Successfully parsed unescaped JSON
+					decrypted, decryptErr := v.manager.Decrypt(&encryptedData)
+					if decryptErr != nil {
+						return "", decryptErr
+					}
+					return string(decrypted), nil
+				}
+			}
+		}
+		// If all parsing attempts fail, return original string (not encrypted)
 		return cipherText, nil
 	}
 
@@ -163,7 +182,29 @@ func (v *DirectCipher) DecryptString(cipherText string) (string, error) {
 		return "", err
 	}
 
-	return string(decrypted), nil
+	decryptedStr := string(decrypted)
+	
+	// Try to decode base64 if the result looks like base64
+	if isBase64(decryptedStr) {
+		if decoded, err := base64.StdEncoding.DecodeString(decryptedStr); err == nil {
+			return string(decoded), nil
+		}
+	}
+
+	return decryptedStr, nil
+}
+
+// isBase64 checks if a string looks like base64 encoded data
+func isBase64(s string) bool {
+	_, err := base64.StdEncoding.DecodeString(s)
+	return err == nil && len(s) > 0 && len(s)%4 == 0
+}
+
+// jsonUnescape unescapes a JSON string that was stored as a string within JSON
+func jsonUnescape(s string) (string, error) {
+	var unescaped string
+	err := json.Unmarshal([]byte("\""+s+"\""), &unescaped)
+	return unescaped, err
 }
 
 // NewEncrypter creates a new Vault-based encrypter
